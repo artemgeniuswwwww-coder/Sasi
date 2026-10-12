@@ -6,15 +6,19 @@ import random
 from flask import Flask, request
 from googlesearch import search
 
+# ==========================================
+# ТОКЕН БОТА
+# ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
-if not GEMINI_KEY:
-    print("❌ ОШИБКА: Переменная GEMINI_KEY не задана на Render!")
-    exit(1)
+# ==========================================
+# LLM7 (КЛЮЧ НЕ НУЖЕН)
+# ==========================================
+LLM7_BASE_URL = "https://api.llm7.io/v1"
+LLM7_API_KEY = "unused"  # можно оставить так
 
 ADMIN_ID = 8577385618
-MODEL_NAME = "gemini-3.8-flash"
+MODEL = "fast"  # "fast" — быстрая, "default" — баланс, "pro" — качество
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -66,34 +70,39 @@ def clean_response(text):
     return '\n'.join(cleaned).strip()
 
 # ==========================================
-# GEMINI
+# LLM7 (ЧЕРЕЗ OPENAI-СОВМЕСТИМЫЙ API)
 # ==========================================
-def ask_gemini(user_id, prompt):
+def ask_llm7(user_id, prompt):
     history = get_history(user_id)
     
-    contents = []
-    for msg in history[-10:]:  # ← уменьшено с 30 до 10
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
+    messages = [
+        {"role": "system", "content": "Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник. Отвечай вежливо, грамотно, с умеренными эмодзи. Мысль всегда заканчивай."}
+    ]
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_KEY}"
-    headers = {"Content-Type": "application/json"}
+    for msg in history[-15:]:
+        role = "user" if msg["role"] == "user" else "assistant"
+        messages.append({"role": role, "content": msg["content"]})
+    
+    messages.append({"role": "user", "content": prompt})
+    
+    url = f"{LLM7_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {LLM7_API_KEY}",
+        "Content-Type": "application/json"
+    }
     data = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 800  # ← уменьшено с 1500 до 800
-        }
+        "model": MODEL,
+        "messages": messages,
+        "max_tokens": 1200,
+        "temperature": 0.7
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=90)  # ← 90 секунд
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
-            result = response.json()
-            raw = result["candidates"][0]["content"]["parts"][0]["text"]
+            raw = response.json()["choices"][0]["message"]["content"]
             return clean_response(raw)
         else:
-            return f"❌ Ошибка Gemini: {response.status_code}\n\n{response.text[:300]}"
+            return f"❌ Ошибка LLM7: {response.status_code}\n\n{response.text[:300]}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:300]}"
 
@@ -135,16 +144,21 @@ def search_google(query):
 # ШУТКИ
 # ==========================================
 def generate_joke():
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_KEY}"
-    headers = {"Content-Type": "application/json"}
+    url = f"{LLM7_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {LLM7_API_KEY}",
+        "Content-Type": "application/json"
+    }
     data = {
-        "contents": [{"role": "user", "parts": [{"text": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой."}]}],
-        "generationConfig": {"temperature": 1.0, "maxOutputTokens": 200}
+        "model": MODEL,
+        "messages": [{"role": "user", "content": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой."}],
+        "max_tokens": 200,
+        "temperature": 1.0
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=90)  # ← 90 секунд
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            raw = response.json()["choices"][0]["message"]["content"]
             return clean_response(raw)
         return f"❌ Ошибка шутки: {response.status_code}"
     except Exception as e:
@@ -259,7 +273,7 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_gemini(user_id, text)
+    response = ask_llm7(user_id, text)
     add_to_history(user_id, "assistant", response)
     bot.delete_message(message.chat.id, status.id)
     send_long_message(message.chat.id, response)
@@ -278,7 +292,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Gemini!"
+    return "🤖 Бот Смайл работает на LLM7!"
 
 # ==========================================
 # ЗАПУСК
