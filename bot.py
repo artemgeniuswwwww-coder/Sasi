@@ -3,7 +3,6 @@ import requests
 import os
 import re
 import random
-import time
 from flask import Flask, request
 from googlesearch import search
 
@@ -13,16 +12,15 @@ from googlesearch import search
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
 
 # ==========================================
-# КЛЮЧ OPENROUTER (из Environment Variables)
+# КЛЮЧ GEMINI (из переменных окружения)
 # ==========================================
-OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY')
+GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
-if not OPENROUTER_KEY:
-    print("❌ ОШИБКА: Переменная окружения OPENROUTER_KEY не задана!")
+if not GEMINI_KEY:
+    print("❌ ОШИБКА: Переменная GEMINI_KEY не задана на Render!")
     exit(1)
 
 ADMIN_ID = 8577385618
-MODEL = "openrouter/free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -66,47 +64,35 @@ def clear_history(user_id):
     if user_id in user_history:
         user_history[user_id] = []
 
-def clean_response(text):
-    if not text:
-        return text
-    lines = text.split('\n')
-    cleaned = [l for l in lines if 'User Safety' not in l and 'safety:' not in l.lower()]
-    return '\n'.join(cleaned).strip()
-
 # ==========================================
-# OPENROUTER
+# GEMINI
 # ==========================================
-def ask_ai(user_id, prompt):
+def ask_gemini(user_id, prompt):
     history = get_history(user_id)
     
-    messages = [
-        {"role": "system", "content": "Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник. Отвечай вежливо, грамотно, с умеренными эмодзи. Мысль всегда заканчивай."}
-    ]
+    # Формируем историю в формате Gemini
+    contents = []
+    for msg in history[-30:]:
+        role = "user" if msg["role"] == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
     
-    for msg in history[-50:]:
-        role = "user" if msg["role"] == "user" else "assistant"
-        messages.append({"role": role, "content": msg["content"]})
-    
-    messages.append({"role": "user", "content": prompt})
-    
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
-        "Content-Type": "application/json"
-    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    headers = {"Content-Type": "application/json"}
     data = {
-        "model": MODEL,
-        "messages": messages,
-        "max_tokens": 1000,
-        "temperature": 0.7
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 1500
+        }
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            raw = response.json()["choices"][0]["message"]["content"]
-            return clean_response(raw)
+            result = response.json()
+            return result["candidates"][0]["content"]["parts"][0]["text"]
         else:
-            return f"❌ Ошибка OpenRouter: {response.status_code}\n\n{response.text[:300]}"
+            return f"❌ Ошибка Gemini: {response.status_code}\n\n{response.text[:300]}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:300]}"
 
@@ -148,22 +134,16 @@ def search_google(query):
 # ШУТКИ
 # ==========================================
 def generate_joke():
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
-        "Content-Type": "application/json"
-    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    headers = {"Content-Type": "application/json"}
     data = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой, без лишнего текста."}],
-        "max_tokens": 200,
-        "temperature": 1.0
+        "contents": [{"role": "user", "parts": [{"text": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой."}]}],
+        "generationConfig": {"temperature": 1.0, "maxOutputTokens": 200}
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            raw = response.json()["choices"][0]["message"]["content"]
-            return clean_response(raw)
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
         return f"❌ Ошибка шутки: {response.status_code}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:200]}"
@@ -277,7 +257,7 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_ai(user_id, text)
+    response = ask_gemini(user_id, text)
     add_to_history(user_id, "assistant", response)
     bot.delete_message(message.chat.id, status.id)
     send_long_message(message.chat.id, response)
@@ -296,7 +276,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает!"
+    return "🤖 Бот Смайл работает на Gemini!"
 
 # ==========================================
 # ЗАПУСК
