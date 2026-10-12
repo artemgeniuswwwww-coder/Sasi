@@ -11,8 +11,11 @@ from googlesearch import search
 # ТВОИ ДАННЫЕ
 # ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-MISTRAL_KEY = 'mstrl_xIzHsNM6LPLGr2forXbgG3pRgQejABgG_0SJGbx'
+OPENROUTER_KEY = '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'
 ADMIN_ID = 8577385618
+
+# Модель (бесплатная, умная)
+MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -67,15 +70,17 @@ def get_full_context(user_id):
     return context
 
 # ==========================================
-# MISTRAL
+# OPENROUTER (С КОДАМИ ОШИБОК)
 # ==========================================
-def ask_mistral(user_id, prompt):
+def ask_ai(user_id, prompt):
     context = get_full_context(user_id)
-    url = "https://api.mistral.ai/v1/chat/completions"
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {MISTRAL_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
+    
     full_prompt = f"""Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник.
 
 Правила:
@@ -91,8 +96,9 @@ def ask_mistral(user_id, prompt):
 Вопрос пользователя: {prompt}
 
 Твой ответ:"""
+    
     data = {
-        "model": "mistral-small-latest",
+        "model": MODEL,
         "messages": [{"role": "user", "content": full_prompt}],
         "max_tokens": 1500,
         "temperature": 0.7
@@ -102,11 +108,11 @@ def ask_mistral(user_id, prompt):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         else:
-            print(f"Mistral статус: {response.status_code} - {response.text[:200]}")
-            return None
+            # КОД ОШИБКИ OPENROUTER
+            return f"❌ Ошибка OpenRouter: {response.status_code}\n\n{response.text[:500]}"
     except Exception as e:
-        print(f"Ошибка Mistral: {e}")
-        return None
+        # ТЕКСТ ИСКЛЮЧЕНИЯ
+        return f"❌ Исключение: {str(e)[:300]}"
 
 # ==========================================
 # КАРТИНКИ
@@ -146,13 +152,13 @@ def search_google(query):
 # ШУТКИ
 # ==========================================
 def generate_joke():
-    url = "https://api.mistral.ai/v1/chat/completions"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {MISTRAL_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "mistral-small-latest",
+        "model": MODEL,
         "messages": [{"role": "user", "content": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой, без лишнего текста."}],
         "max_tokens": 200,
         "temperature": 1.0
@@ -161,9 +167,9 @@ def generate_joke():
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
-        return "Шутка не придумалась 😅"
-    except:
-        return "Ошибка при генерации шутки"
+        return f"❌ Ошибка шутки: {response.status_code}"
+    except Exception as e:
+        return f"❌ Исключение: {str(e)[:200]}"
 
 # ==========================================
 # ДЛИННЫЕ СООБЩЕНИЯ
@@ -274,9 +280,7 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_mistral(user_id, text)
-    if response is None:
-        response = "🔧 Ведутся технические работы. Ведутся одним человеком, так что ожидайте."
+    response = ask_ai(user_id, text)
     add_to_history(user_id, "assistant", response)
     bot.delete_message(message.chat.id, status.id)
     send_long_message(message.chat.id, response)
@@ -295,7 +299,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Mistral!"
+    return "🤖 Бот Смайл работает на OpenRouter!"
 
 # ==========================================
 # ЗАПУСК
