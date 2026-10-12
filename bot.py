@@ -8,13 +8,20 @@ from flask import Flask, request
 from googlesearch import search
 
 # ==========================================
-# ТВОИ ДАННЫЕ
+# ТОКЕН БОТА (в коде)
 # ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-OPENROUTER_KEY = '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'
-ADMIN_ID = 8577385618
 
-# Модель (бесплатная, умная)
+# ==========================================
+# КЛЮЧ OPENROUTER (из Environment Variables на Render)
+# ==========================================
+OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY')
+
+if not OPENROUTER_KEY:
+    print("❌ ОШИБКА: Переменная окружения OPENROUTER_KEY не задана на Render!")
+    exit(1)
+
+ADMIN_ID = 8577385618
 MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 bot = telebot.TeleBot(TOKEN)
@@ -108,10 +115,8 @@ def ask_ai(user_id, prompt):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         else:
-            # КОД ОШИБКИ OPENROUTER
             return f"❌ Ошибка OpenRouter: {response.status_code}\n\n{response.text[:500]}"
     except Exception as e:
-        # ТЕКСТ ИСКЛЮЧЕНИЯ
         return f"❌ Исключение: {str(e)[:300]}"
 
 # ==========================================
