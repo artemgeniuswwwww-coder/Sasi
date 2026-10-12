@@ -4,21 +4,17 @@ import os
 import re
 import random
 from flask import Flask, request
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from googlesearch import search
 
 # ==========================================
-# ТОКЕН БОТА
+# ДАННЫЕ
 # ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-
-# ==========================================
-# LLM7 (КЛЮЧ НЕ НУЖЕН)
-# ==========================================
 LLM7_BASE_URL = "https://api.llm7.io/v1"
-LLM7_API_KEY = "unused"  # можно оставить так
-
+LLM7_API_KEY = "unused"
 ADMIN_ID = 8577385618
-MODEL = "fast"  # "fast" — быстрая, "default" — баланс, "pro" — качество
+MODEL = "fast"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -45,6 +41,9 @@ def toggle_maintenance(message):
         maintenance_mode = False
         bot.reply_to(message, "✅ Режим техобслуживания ВЫКЛЮЧЕН")
 
+# ==========================================
+# ИСТОРИЯ (200 хранится, 40 отправляется ИИ)
+# ==========================================
 user_history = {}
 
 def get_history(user_id):
@@ -55,31 +54,46 @@ def get_history(user_id):
 def add_to_history(user_id, role, text):
     history = get_history(user_id)
     history.append({"role": role, "content": text})
-    if len(history) > 50:
+    if len(history) > 200:
         history.pop(0)
 
 def clear_history(user_id):
     if user_id in user_history:
         user_history[user_id] = []
 
-def clean_response(text):
+# ==========================================
+# ЧИСТКА ОТВЕТА
+# ==========================================
+def clean_response(text, user_prompt=""):
     if not text:
         return text
+    
     lines = text.split('\n')
     cleaned = [l for l in lines if 'User Safety' not in l and 'safety:' not in l.lower()]
-    return '\n'.join(cleaned).strip()
+    text = '\n'.join(cleaned).strip()
+    
+    if user_prompt:
+        prompt_clean = user_prompt.strip()
+        if text.endswith(prompt_clean):
+            text = text[:-len(prompt_clean)].strip()
+        lines = text.split('\n')
+        if len(lines) > 1 and lines[-1].strip().lower() == prompt_clean.lower():
+            text = '\n'.join(lines[:-1]).strip()
+    
+    return text.strip()
 
 # ==========================================
-# LLM7 (ЧЕРЕЗ OPENAI-СОВМЕСТИМЫЙ API)
+# LLM7
 # ==========================================
 def ask_llm7(user_id, prompt):
     history = get_history(user_id)
     
     messages = [
-        {"role": "system", "content": "Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник. Отвечай вежливо, грамотно, с умеренными эмодзи. Мысль всегда заканчивай."}
+        {"role": "system", "content": "Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник. Отвечай вежливо, грамотно, с умеренными эмодзи. Мысль всегда заканчивай. НЕ повторяй вопрос пользователя в конце ответа."}
     ]
     
-    for msg in history[-15:]:
+    # Отправляем ИИ последние 40 сообщений
+    for msg in history[-40:]:
         role = "user" if msg["role"] == "user" else "assistant"
         messages.append({"role": role, "content": msg["content"]})
     
@@ -100,7 +114,7 @@ def ask_llm7(user_id, prompt):
         response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
             raw = response.json()["choices"][0]["message"]["content"]
-            return clean_response(raw)
+            return clean_response(raw, prompt)
         else:
             return f"❌ Ошибка LLM7: {response.status_code}\n\n{response.text[:300]}"
     except Exception as e:
@@ -141,30 +155,6 @@ def search_google(query):
         return f"😅 Ошибка поиска: {e}"
 
 # ==========================================
-# ШУТКИ
-# ==========================================
-def generate_joke():
-    url = f"{LLM7_BASE_URL}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {LLM7_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой."}],
-        "max_tokens": 200,
-        "temperature": 1.0
-    }
-    try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        if response.status_code == 200:
-            raw = response.json()["choices"][0]["message"]["content"]
-            return clean_response(raw)
-        return f"❌ Ошибка шутки: {response.status_code}"
-    except Exception as e:
-        return f"❌ Исключение: {str(e)[:200]}"
-
-# ==========================================
 # ДЛИННЫЕ СООБЩЕНИЯ
 # ==========================================
 def send_long_message(chat_id, text):
@@ -180,25 +170,38 @@ def send_long_message(chat_id, text):
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    user_name = message.from_user.first_name or "пользователь"
+    user_name = message.from_user.first_name or "друг"
     clear_history(user_id)
-    bot.reply_to(
-        message,
-        f"👋 Здравствуйте, **{user_name}**! Я Смайл 😊\n\n"
-        "🎨 **Нарисуй** [описание] — картинка\n"
-        "🔍 **Найди** [запрос] — поиск в Google\n"
-        "💬 **Просто напишите** вопрос — я постараюсь помочь\n"
-        "😂 **/joke** — шутка\n"
-        "🔄 **/newchat** — новый диалог\n"
-        "🧹 **/clear** — очистить историю",
-        parse_mode='Markdown'
+    
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(
+        KeyboardButton("🎨 Нарисуй"),
+        KeyboardButton("🔍 Найди"),
+        KeyboardButton("🧹 Очистить"),
+        KeyboardButton("🔄 Новый диалог"),
+        KeyboardButton("ℹ️ Помощь")
     )
+    
+    greeting = f"""👋 **Привет, {user_name}!**
 
-@bot.message_handler(commands=['joke'])
-def joke_cmd(message):
-    status = bot.reply_to(message, "😂 Придумываю шутку...")
-    joke = generate_joke()
-    bot.edit_message_text(f"😂 {joke}", message.chat.id, status.id)
+Я — **Смайл** 😊, твой личный ИИ-помощник. Умею многое:
+
+🎨 **Рисовать** — просто скажи «Нарисуй закат в горах»
+🔍 **Искать в Google** — «Найди новости про космос»
+💬 **Отвечать на любые вопросы** — от науки до анекдотов
+📝 **Помнить наш разговор** — контекст сохраняется
+
+⚡ **Фишки:**
+• Могу отвечать подробно или коротко — как попросишь
+• Помню до 100 пар «вопрос-ответ»
+• Работаю 24/7
+
+💡 **Попробуй прямо сейчас:**
+*Привет, как дела?* или *Нарисуй дракона*
+
+⬇️ **Кнопки внизу — для быстрого доступа**"""
+    
+    bot.reply_to(message, greeting, parse_mode='Markdown', reply_markup=markup)
 
 @bot.message_handler(commands=['newchat'])
 def new_chat(message):
@@ -223,6 +226,38 @@ def handle_message(message):
     text = message.text
     text_lower = text.lower()
     user_name = message.from_user.first_name or "пользователь"
+
+    # === ОБРАБОТКА КНОПОК ===
+    if text == "🎨 Нарисуй":
+        bot.reply_to(message, "🎨 Напиши: **Нарисуй [что]**\nНапример: *Нарисуй кота в космосе*", parse_mode='Markdown')
+        return
+    
+    if text == "🔍 Найди":
+        bot.reply_to(message, "🔍 Напиши: **Найди [запрос]**\nНапример: *Найди новости про ИИ*", parse_mode='Markdown')
+        return
+    
+    if text == "🧹 Очистить":
+        clear_history(user_id)
+        bot.reply_to(message, "🧹 История диалога очищена! 😊")
+        return
+    
+    if text == "🔄 Новый диалог":
+        clear_history(user_id)
+        bot.reply_to(message, "🔄 Начал новый диалог! История очищена. 😊")
+        return
+    
+    if text == "ℹ️ Помощь":
+        bot.reply_to(
+            message,
+            "📖 **Команды:**\n\n"
+            "🎨 **Нарисуй** [описание] — картинка\n"
+            "🔍 **Найди** [запрос] — поиск в Google\n"
+            "💬 Любой текст — ответ ИИ\n\n"
+            "🧹 Очистить — сброс истории\n"
+            "🔄 Новый диалог — начать заново",
+            parse_mode='Markdown'
+        )
+        return
 
     if maintenance_mode and not is_admin(user_id):
         bot.reply_to(message, "🔧 Ведутся технические работы. Ведутся одним человеком, так что ожидайте.")
