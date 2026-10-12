@@ -22,7 +22,7 @@ if not OPENROUTER_KEY:
     exit(1)
 
 ADMIN_ID = 8577385618
-MODEL = "openai/gpt-oss-120b:free"
+MODEL = "openrouter/free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
