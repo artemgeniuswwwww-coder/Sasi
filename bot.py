@@ -8,21 +8,21 @@ from flask import Flask, request
 from googlesearch import search
 
 # ==========================================
-# ТОКЕН БОТА (в коде)
+# ТОКЕН БОТА
 # ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
 
 # ==========================================
-# КЛЮЧ OPENROUTER (из Environment Variables на Render)
+# КЛЮЧ OPENROUTER (из Environment Variables)
 # ==========================================
 OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY')
 
 if not OPENROUTER_KEY:
-    print("❌ ОШИБКА: Переменная окружения OPENROUTER_KEY не задана на Render!")
+    print("❌ ОШИБКА: Переменная окружения OPENROUTER_KEY не задана!")
     exit(1)
 
 ADMIN_ID = 8577385618
-MODEL = "openrouter/free"
+MODEL = "qwen/qwen-2.5-7b-instruct:free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -59,63 +59,54 @@ def get_history(user_id):
 def add_to_history(user_id, role, text):
     history = get_history(user_id)
     history.append({"role": role, "content": text})
-    if len(history) > 30:
+    if len(history) > 50:
         history.pop(0)
 
 def clear_history(user_id):
     if user_id in user_history:
         user_history[user_id] = []
 
-def get_full_context(user_id):
-    history = get_history(user_id)
-    context = ""
-    for msg in history:
-        if msg["role"] == "user":
-            context += f"Пользователь: {msg['content']}\n"
-        else:
-            context += f"Смайл: {msg['content']}\n"
-    return context
+def clean_response(text):
+    if not text:
+        return text
+    lines = text.split('\n')
+    cleaned = [l for l in lines if 'User Safety' not in l and 'safety:' not in l.lower()]
+    return '\n'.join(cleaned).strip()
 
 # ==========================================
-# OPENROUTER (С КОДАМИ ОШИБОК)
+# OPENROUTER
 # ==========================================
 def ask_ai(user_id, prompt):
-    context = get_full_context(user_id)
+    history = get_history(user_id)
+    
+    messages = [
+        {"role": "system", "content": "Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник. Отвечай вежливо, грамотно, с умеренными эмодзи. Мысль всегда заканчивай."}
+    ]
+    
+    for msg in history[-50:]:
+        role = "user" if msg["role"] == "user" else "assistant"
+        messages.append({"role": role, "content": msg["content"]})
+    
+    messages.append({"role": "user", "content": prompt})
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
-    
-    full_prompt = f"""Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник.
-
-Правила:
-1. Отвечай вежливо, дружелюбно и по делу.
-2. Пиши грамотно, без сленга.
-3. Добавляй эмодзи 😊, 👋, 👍, 🌟, 💡 — умеренно.
-4. Если не знаешь — скажи честно.
-5. Отвечай настолько подробно, насколько нужно. Мысль всегда должна быть закончена.
-
-История диалога:
-{context}
-
-Вопрос пользователя: {prompt}
-
-Твой ответ:"""
-    
     data = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 1500,
+        "messages": messages,
+        "max_tokens": 1000,
         "temperature": 0.7
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=60)
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            raw = response.json()["choices"][0]["message"]["content"]
+            return clean_response(raw)
         else:
-            return f"❌ Ошибка OpenRouter: {response.status_code}\n\n{response.text[:500]}"
+            return f"❌ Ошибка OpenRouter: {response.status_code}\n\n{response.text[:300]}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:300]}"
 
@@ -171,7 +162,8 @@ def generate_joke():
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            raw = response.json()["choices"][0]["message"]["content"]
+            return clean_response(raw)
         return f"❌ Ошибка шутки: {response.status_code}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:200]}"
@@ -304,7 +296,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на OpenRouter!"
+    return "🤖 Бот Смайл работает!"
 
 # ==========================================
 # ЗАПУСК
