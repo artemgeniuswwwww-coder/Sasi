@@ -11,7 +11,7 @@ from googlesearch import search
 # ТВОИ ДАННЫЕ
 # ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-GROQ_KEY = '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'
+MISTRAL_KEY = 'mstrl_xIzHsNM6LPLGr2forXbgG3pRgQejABgG_0SJGbx'
 ADMIN_ID = 8577385618
 
 bot = telebot.TeleBot(TOKEN)
@@ -67,17 +67,15 @@ def get_full_context(user_id):
     return context
 
 # ==========================================
-# GROQ (LLAMA 3.1)
+# MISTRAL
 # ==========================================
-def ask_groq(user_id, prompt):
+def ask_mistral(user_id, prompt):
     context = get_full_context(user_id)
-    
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {GROQ_KEY}",
+        "Authorization": f"Bearer {MISTRAL_KEY}",
         "Content-Type": "application/json"
     }
-    
     full_prompt = f"""Ты — Смайл, дружелюбный, вежливый и умный ИИ-помощник.
 
 Правила:
@@ -93,9 +91,8 @@ def ask_groq(user_id, prompt):
 Вопрос пользователя: {prompt}
 
 Твой ответ:"""
-    
     data = {
-        "model": "llama-3.1-70b-versatile",
+        "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
         "max_tokens": 1500,
         "temperature": 0.7
@@ -105,10 +102,10 @@ def ask_groq(user_id, prompt):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         else:
-            print(f"Ошибка Groq: {response.status_code} - {response.text[:200]}")
+            print(f"Mistral статус: {response.status_code} - {response.text[:200]}")
             return None
     except Exception as e:
-        print(f"Ошибка Groq: {e}")
+        print(f"Ошибка Mistral: {e}")
         return None
 
 # ==========================================
@@ -149,13 +146,13 @@ def search_google(query):
 # ШУТКИ
 # ==========================================
 def generate_joke():
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {GROQ_KEY}",
+        "Authorization": f"Bearer {MISTRAL_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama-3.1-70b-versatile",
+        "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой, без лишнего текста."}],
         "max_tokens": 200,
         "temperature": 1.0
@@ -277,7 +274,7 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_groq(user_id, text)
+    response = ask_mistral(user_id, text)
     if response is None:
         response = "🔧 Ведутся технические работы. Ведутся одним человеком, так что ожидайте."
     add_to_history(user_id, "assistant", response)
@@ -298,7 +295,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Groq!"
+    return "🤖 Бот Смайл работает на Mistral!"
 
 # ==========================================
 # ЗАПУСК
