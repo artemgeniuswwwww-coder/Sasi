@@ -22,7 +22,7 @@ if not OPENROUTER_KEY:
     exit(1)
 
 ADMIN_ID = 8577385618
-MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+MODEL = "openrouter/free"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
