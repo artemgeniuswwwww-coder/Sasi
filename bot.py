@@ -6,14 +6,7 @@ import random
 from flask import Flask, request
 from googlesearch import search
 
-# ==========================================
-# ТОКЕН БОТА
-# ==========================================
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
-
-# ==========================================
-# КЛЮЧ GEMINI (из переменных окружения Render)
-# ==========================================
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
 if not GEMINI_KEY:
@@ -21,7 +14,7 @@ if not GEMINI_KEY:
     exit(1)
 
 ADMIN_ID = 8577385618
-MODEL_NAME = "gemini-3.8-flash"  # Обновлённая модель
+MODEL_NAME = "gemini-3.8-flash"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -66,7 +59,6 @@ def clear_history(user_id):
         user_history[user_id] = []
 
 def clean_response(text):
-    """Убираем служебные строки"""
     if not text:
         return text
     lines = text.split('\n')
@@ -74,14 +66,13 @@ def clean_response(text):
     return '\n'.join(cleaned).strip()
 
 # ==========================================
-# GEMINI (gemini-3.8-flash)
+# GEMINI
 # ==========================================
 def ask_gemini(user_id, prompt):
     history = get_history(user_id)
     
-    # Формируем историю в формате Gemini
     contents = []
-    for msg in history[-30:]:
+    for msg in history[-10:]:  # ← уменьшено с 30 до 10
         role = "user" if msg["role"] == "user" else "model"
         contents.append({"role": role, "parts": [{"text": msg["content"]}]})
     contents.append({"role": "user", "parts": [{"text": prompt}]})
@@ -92,11 +83,11 @@ def ask_gemini(user_id, prompt):
         "contents": contents,
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 1500
+            "maxOutputTokens": 800  # ← уменьшено с 1500 до 800
         }
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=90)  # ← 90 секунд
         if response.status_code == 200:
             result = response.json()
             raw = result["candidates"][0]["content"]["parts"][0]["text"]
@@ -151,7 +142,7 @@ def generate_joke():
         "generationConfig": {"temperature": 1.0, "maxOutputTokens": 200}
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=90)  # ← 90 секунд
         if response.status_code == 200:
             raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
             return clean_response(raw)
