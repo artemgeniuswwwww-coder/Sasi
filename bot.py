@@ -12,7 +12,7 @@ from googlesearch import search
 TOKEN = '8637534012:AAHzjCKTr1ZKM7ZKDUd8D0_--gMZoWQziSE'
 
 # ==========================================
-# КЛЮЧ GEMINI (из переменных окружения)
+# КЛЮЧ GEMINI (из переменных окружения Render)
 # ==========================================
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
@@ -21,6 +21,7 @@ if not GEMINI_KEY:
     exit(1)
 
 ADMIN_ID = 8577385618
+MODEL_NAME = "gemini-3.8-flash"  # Обновлённая модель
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -64,8 +65,16 @@ def clear_history(user_id):
     if user_id in user_history:
         user_history[user_id] = []
 
+def clean_response(text):
+    """Убираем служебные строки"""
+    if not text:
+        return text
+    lines = text.split('\n')
+    cleaned = [l for l in lines if 'User Safety' not in l and 'safety:' not in l.lower()]
+    return '\n'.join(cleaned).strip()
+
 # ==========================================
-# GEMINI
+# GEMINI (gemini-3.8-flash)
 # ==========================================
 def ask_gemini(user_id, prompt):
     history = get_history(user_id)
@@ -77,7 +86,7 @@ def ask_gemini(user_id, prompt):
         contents.append({"role": role, "parts": [{"text": msg["content"]}]})
     contents.append({"role": "user", "parts": [{"text": prompt}]})
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_KEY}"
     headers = {"Content-Type": "application/json"}
     data = {
         "contents": contents,
@@ -90,7 +99,8 @@ def ask_gemini(user_id, prompt):
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             result = response.json()
-            return result["candidates"][0]["content"]["parts"][0]["text"]
+            raw = result["candidates"][0]["content"]["parts"][0]["text"]
+            return clean_response(raw)
         else:
             return f"❌ Ошибка Gemini: {response.status_code}\n\n{response.text[:300]}"
     except Exception as e:
@@ -134,7 +144,7 @@ def search_google(query):
 # ШУТКИ
 # ==========================================
 def generate_joke():
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_KEY}"
     headers = {"Content-Type": "application/json"}
     data = {
         "contents": [{"role": "user", "parts": [{"text": "Придумай короткую, смешную шутку на русском языке. Отвечай только шуткой."}]}],
@@ -143,7 +153,8 @@ def generate_joke():
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return clean_response(raw)
         return f"❌ Ошибка шутки: {response.status_code}"
     except Exception as e:
         return f"❌ Исключение: {str(e)[:200]}"
